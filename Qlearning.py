@@ -7,20 +7,23 @@ Original file is located at
     https://colab.research.google.com/drive/1nR_xLIF1uiO8hBgnbdS4wJFzWyTInnQJ
 """
 
-import torch
 import copy
-
-from typing import Tuple
-from enum import Enum
 import random
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import List
-import numpy as np
-import matplotlib.pyplot as plt
+from typing import Tuple
 from matplotlib.widgets import Button
 import matplotlib.cm as cm
+import random as rd
+import scipy as sp
+import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
 import time, threading
 
+matplotlib.use("TkAgg")
 """## Environment Setup
 ### Utility Classes
 #### `Coordinate` class  
@@ -54,6 +57,9 @@ class Coordinate:
         if isinstance(other, Coordinate):
             return self.x == other.x and self.y == other.y
         return False
+
+    def __hash__(self):
+        return hash((self.x, self.y))
 
     def to_tuple(self) -> Tuple[int, int]:
         return (self.x, self.y)
@@ -344,7 +350,7 @@ class DeepQLearning:
             else:
                 y = reward.value + gamma * self.get_maxQ(next_state).item()
             targets.append(y)
-            states.append(np.array(cur_state).reshape(1, 7))
+            states.append(np.array(cur_state).reshape(1, 4))
             actions.append(action.value)
 
         # calculate the loss of one step of training
@@ -418,8 +424,10 @@ class DeepQLearningAgent(Agent):
     @staticmethod
     def is_meet(agent_list: List[Agent]):
         position_list = [agent.location for agent in agent_list]
-        if len(position_list) != len(set(position_list)):
-            return True
+        for i in range(len(position_list)):
+            for j in range(i + 1, len(position_list)):
+                if position_list[i] == position_list[j]:
+                    return True
         return False
 
     @staticmethod
@@ -493,7 +501,7 @@ class ABMultiAgentGridWorld(MultiAgentGridWorld):
         self.location_target = self._generate_random_valid_coord()
         self.agent_list = agent_list
         for agent in agent_list:
-            agent.observe_world()
+            agent.observe_world(self)
         self.steps = 0
 
     def _generate_random_valid_coord(self, invalid_coords: List[Coordinate] = []) -> Coordinate:
@@ -522,7 +530,15 @@ class ABMultiAgentGridWorld(MultiAgentGridWorld):
         return self.has_agents_completed_objective()
 
     def has_agents_completed_objective(self):
-        return all(agent.has_completed_objective() for agent in self.agent_list)
+        position_list = [agent.location for agent in self.agent_list]
+        in_target_location = []
+        for index, position in enumerate(position_list):
+            if position == self.location_target:
+                in_target_location.append(index)
+        for index in in_target_location:
+            if self.agent_list[index].has_full_key:
+                return True
+        return False
 
     def reset(self, agent_location: Coordinate = None, location_target: Coordinate = None):
         # resets location A and location B and sets agent
@@ -548,7 +564,6 @@ class ABMultiAgentGridWorld(MultiAgentGridWorld):
 The shortest path between two locaton is calculated using Manhattan distance.
 """
 
-
 # def manhattan(location_A: Coordinate, location_B: Coordinate) -> int:
 #     return sum([abs(num) for num in ((location_A - location_B).to_tuple())])
 
@@ -558,7 +573,130 @@ The agent will be trained for a given number of episodes. For each episode, the 
 """
 
 
-def train_agent(grid_world: ABSingleAgentGridWorld, num_episodes: int) -> None:
+# def simulation(gridWorld, agent_list: list[DeepQLearningAgent]):
+#     global config, fig, ax, bnext, bstart, bstop, binit, agent_rep
+#     episode = 0
+#
+#     def stopAnim(d):
+#         global stop
+#         stop = True
+#
+#     def startAnim(d):
+#         global stop
+#         stop = False
+#         foo()
+#
+#     def advance(d):
+#         global mat, config, plt, time, agent_rep1, agent_rep2, agent_rep3, agent_rep4
+#         time += 1
+#         time += 1
+#         time += 1
+#         mat.set_data(config)
+#         # remove the agent from its previous location
+#         if agent_rep1:
+#             agent_rep1.remove()
+#         if agent_rep2:
+#             agent_rep2.remove()
+#         if agent_rep3:
+#             agent_rep3.remove()
+#         if agent_rep4:
+#             agent_rep4.remove()
+#         # place the agent to its new location
+#         agent_rep1 = plt.Circle((gridWorld.agent_list[0].location.x, gridWorld.agent_list[0].location.y), 0.2,
+#                                 color='yellow',
+#                                 fill=True,
+#                                 linewidth=2)
+#         agent_rep2 = plt.Circle((gridWorld.agent_list[1].location.x, gridWorld.agent_list[1].location.y), 0.2,
+#                                 color='red',
+#                                 fill=True,
+#                                 linewidth=2)
+#         agent_rep3 = plt.Circle((gridWorld.agent_list[2].location.x, gridWorld.agent_list[2].location.y), 0.2,
+#                                 color='green',
+#                                 fill=True,
+#                                 linewidth=2)
+#         agent_rep4 = plt.Circle((gridWorld.agent_list[3].location.x, gridWorld.agent_list[3].location.y), 0.2,
+#                                 color='blue',
+#                                 fill=True,
+#                                 linewidth=2)
+#         ax.add_patch(agent_rep1)
+#         ax.add_patch(agent_rep2)
+#         ax.add_patch(agent_rep3)
+#         ax.add_patch(agent_rep4)
+#         # updates the plot title to reflect current reward
+#         # plt.title('reward = ' + str(gridWorld.agent.acc_reward) + '\n' + 'episode = ' + str(gridWorld.episode))
+#         # plt.title('episode = ' + str(gridWorld.episode))
+#         plt.title('demo')
+#
+#     def initAnim(d):
+#         # resets the simulation
+#         global mat, config, plt, time, agent_rep1, agent_rep2, agent_rep3, agent_rep4
+#         # resets time to 0
+#         time = 0
+#         episode = 1
+#         # gridWorld.init_placement()
+#         mat = ax.matshow(config, cmap=cm.seismic)
+#         mat.set_data(config)
+#
+#         # plot the location of A and B based on their coordinate
+#         ax.text(gridWorld.location_target.x, gridWorld.location_target.y, 'B', ha='center', va='center', color='white')
+#         agent_rep1 = plt.Circle((gridWorld.agent_list[0].location.x, gridWorld.agent_list[0].location.y), 0.2, color='yellow',
+#                                 fill=True,
+#                                 linewidth=2)
+#         agent_rep2 = plt.Circle((gridWorld.agent_list[1].location.x, gridWorld.agent_list[1].location.y), 0.2, color='red',
+#                                 fill=True,
+#                                 linewidth=2)
+#         agent_rep3 = plt.Circle((gridWorld.agent_list[2].location.x, gridWorld.agent_list[2].location.y), 0.2, color='green',
+#                                 fill=True,
+#                                 linewidth=2)
+#         agent_rep4 = plt.Circle((gridWorld.agent_list[3].location.x, gridWorld.agent_list[3].location.y), 0.2, color='blue',
+#                                 fill=True,
+#                                 linewidth=2)
+#         ax.add_patch(agent_rep1)
+#         ax.add_patch(agent_rep2)
+#         ax.add_patch(agent_rep3)
+#         ax.add_patch(agent_rep4)
+#         # ax.set_aspect('equal')
+#
+#         # show initial reward
+#         # plt.title('reward = ' + str(gridWorld.agent.acc_reward) + '\n' + 'episode = ' + str(gridWorld.episode))
+#         # plt.title('reward = ' + str(gridWorld.agent.acc_reward))
+#         plt.title('demo')
+#         plt.show()
+#
+#     def foo():
+#         global timer, stop
+#         advance(None)
+#         if not (stop):
+#             # schedules the next call to foo() after a delay equal to speed
+#             timer = threading.Timer(0.25, foo)
+#             timer.start()
+#
+#     rd.seed()
+#     # creating figure and axes
+#     fig, ax = plt.subplots()
+#     ax.axis('on')
+#     plt.title("Q-learning")
+#
+#     axnext = plt.axes([0.85, 0.15, 0.1, 0.075])
+#     axstart = plt.axes([0.85, 0.25, 0.1, 0.075])
+#     axstop = plt.axes([0.85, 0.35, 0.1, 0.075])
+#     axinit = plt.axes([0.85, 0.45, 0.1, 0.075])
+#     bnext = Button(axnext, 'Next')
+#     bnext.on_clicked(advance)
+#     bstart = Button(axstart, 'Start')
+#     bstart.on_clicked(startAnim)
+#     bstop = Button(axstop, 'Stop')
+#     bstop.on_clicked(stopAnim)
+#     binit = Button(axinit, 'Init')
+#     binit.on_clicked(initAnim)
+#
+#     config = np.zeros([gridWorld.n, gridWorld.n])
+#     initAnim(None)
+#
+#     # print(f'a_loc: {gridWorld.location_a} | b_loc: {gridWorld.location_b}')
+
+
+def train_agent(grid_world: ABMultiAgentGridWorld, num_episodes: int) -> None:
     # set training mode to true for greedy epsilon policy improvement
     grid_world.activate_training_mode()
 
@@ -568,15 +706,30 @@ def train_agent(grid_world: ABSingleAgentGridWorld, num_episodes: int) -> None:
         # while the objective goal is not met, sample transitions from mini-batch to perform forward propagation
         while not objective_completed:
             objective_completed = grid_world.step()
+            for agent in grid_world.agent_list:
+                print(agent.location)
         print(f"Episode {ep + 1} completed. ")
 
-    loss = grid_world.agent.q_learning.get_loss_history()
+    agent_list = grid_world.agent_list
+    # 初始化一个列表来存储所有智能体的损失历史
+    all_agents_loss_history = []
+
+    # 遍历 agent_list 中的每个智能体
+    for agent in agent_list:
+        # 获取当前智能体的损失历史
+        loss_history = agent.q_learning.get_loss_history()
+
+        # 将该智能体的损失历史添加到合并列表中
+        all_agents_loss_history.append(loss_history)
+
+    # 可选：你可以计算所有智能体每一步的平均损失
+    average_loss_per_step = [sum(losses) / len(agent_list) for losses in zip(*all_agents_loss_history)]
 
     # Plot the changes in loss
     plt.figure(figsize=(12, 5))
 
     plt.subplot(1, 2, 1)
-    plt.plot(range(len(loss)), loss, label='Total Loss')
+    plt.plot(range(len(average_loss_per_step)), average_loss_per_step, label='Total Loss')
     plt.xlabel('Steps')
     plt.ylabel('Loss')
     plt.title('Loss Progress During Training')
@@ -587,7 +740,7 @@ def train_agent(grid_world: ABSingleAgentGridWorld, num_episodes: int) -> None:
 
 """### Parameter setting and initialization for testing model"""
 
-statespace_size = 7
+statespace_size = 4
 learning_rate = 0.997
 starting_epsilon = 1
 epsilon_decay_factor = 0.9998
@@ -597,21 +750,37 @@ batch_size = 200
 network_copy_freq = 500
 
 # Parameter Settings
-n = 4
-num_train_episodes = 1000  # Number of training episodes
+n = 5
+num_train_episodes = 4  # Number of training episodes
 
 # Initialize the agent, Q-learning, and the environment
-q_learning = DeepQLearning(statespace_size,
-                           learning_rate,
-                           starting_epsilon,
-                           epsilon_decay_factor,
-                           min_epsilon,
-                           replay_buffer_size,
-                           batch_size,
-                           network_copy_freq)
-q_learning.prepare_torch()
-agent = DeepQLearningAgent(ABSingleAgentGridWorld.generate_random_coord(n), q_learning)
-world = ABSingleAgentGridWorld(agent, n)
+q_learning_a = DeepQLearning(statespace_size,
+                             learning_rate,
+                             starting_epsilon,
+                             epsilon_decay_factor,
+                             min_epsilon,
+                             replay_buffer_size,
+                             batch_size,
+                             network_copy_freq)
+q_learning_b = DeepQLearning(statespace_size,
+                             learning_rate,
+                             starting_epsilon,
+                             epsilon_decay_factor,
+                             min_epsilon,
+                             replay_buffer_size,
+                             batch_size,
+                             network_copy_freq)
+q_learning_a.prepare_torch()
+q_learning_b.prepare_torch()
+agent1 = DeepQLearningAgent(ABMultiAgentGridWorld.generate_random_coord(n), 1, 'A', q_learning_a)
+agent2 = DeepQLearningAgent(ABMultiAgentGridWorld.generate_random_coord(n), 2, 'A', q_learning_a)
+agent3 = DeepQLearningAgent(ABMultiAgentGridWorld.generate_random_coord(n), 3, 'B', q_learning_b)
+agent4 = DeepQLearningAgent(ABMultiAgentGridWorld.generate_random_coord(n), 4, 'B', q_learning_b)
+agent_list = [agent1, agent2, agent3, agent4]
+world = ABMultiAgentGridWorld(agent_list, n)
+# for agent in agent_list:
+#     agent.observe_world(world)
+# simulation(world, agent_list)
 
 train_agent(world, num_train_episodes)
 
@@ -619,76 +788,75 @@ train_agent(world, num_train_episodes)
 The agent will be tested for a given number of tests. The total manhattan distance between initial location of agent, random location A and B will be used as the metrics to identify the shortest path. We have generated all possible combinations of coordinate of agent, A and B as our test cases. For each test, the number of steps the agent took will be compared to the shortest path to see optimality.
 """
 
+# def test_agent(grid_world: ABSingleAgentGridWorld) -> None:
+#     steps_per_test = []  # Store the number of steps for each test
+#     optimal_costs = []
+#     num_tests = 0
+#     n = grid_world.n
+#     failed = 0
+#
+#     grid_world.activate_testing_mode()
+#
+#     for x1 in range(n):
+#         for y1 in range(n):
+#             for x2 in range(n):
+#                 for y2 in range(n):
+#                     for x3 in range(n):
+#                         for y3 in range(n):
+#                             if x2 == x3 and y2 == y3:
+#                                 break  # location a and location b cannot be the same
+#                             grid_world.reset(agent_location=Coordinate(x1, y1), location_a=Coordinate(x2, y2),
+#                                              location_b=Coordinate(x3, y3))
+#                             step_count = 0
+#                             q_values = []
+#                             path = []
+#
+#                             # optimal cost to from agent initial location to A to B
+#                             optimal_costs.append(
+#                                 manhattan(grid_world.agent.location, grid_world.location_a) + manhattan(
+#                                     grid_world.location_a, grid_world.location_b))
+#
+#                             grid_world.agent.q_learning.epsilon = 0
+#                             while not grid_world.agent.objective_completed and step_count < 100:
+#                                 action = grid_world.agent.get_action()
+#                                 grid_world.agent.execute_action(action)
+#                                 step_count += 1
+#                                 path.append(grid_world.agent.location)
+#                             if (step_count >= 100):
+#                                 failed += 1
+#                                 print(f"Agent Initial Location: {x1, y1}")
+#                                 print(f"Location A: {x2, y2}")
+#                                 print(f"Location B: {x3, y3}")
+#                                 print(path)
+#                             steps_per_test.append(step_count)  # Record the number of steps
+#
+#     num_tests = len(steps_per_test)
+#
+#     # Plot for optimal and actual steps
+#     plt.figure(figsize=(12, 5))
+#     plt.subplot(1, 2, 1)
+#     plt.plot(range(num_tests), steps_per_test, label='Steps')
+#     plt.plot(range(num_tests), optimal_costs, linestyle="dashed", label='Optimal Steps')
+#     plt.xlabel('Test Number')
+#     plt.ylabel('Steps')
+#     plt.title('Step Progress During Testing')
+#     plt.legend()
+#
+#     # Plot for difference in optimal and actual steps
+#     difference = [s - o for s, o in zip(steps_per_test, optimal_costs)]
+#     print(f"{difference.count(0)}/{num_tests} tests were optimal")
+#     print(f"{sum(1 for x in difference if x != 0)}/{num_tests} tests were not optimal")
+#     print(f"{failed}/{num_tests} tests have timed-out")
+#     plt.subplot(1, 2, 2)
+#     plt.plot(range(num_tests), difference, label='Steps Difference')
+#     plt.xlabel('Test Number')
+#     plt.ylabel('Steps')
+#     plt.title('Difference in Optimal and Actual Steps During Testing')
+#     plt.legend()
+#     plt.show()
 
-def test_agent(grid_world: ABSingleAgentGridWorld) -> None:
-    steps_per_test = []  # Store the number of steps for each test
-    optimal_costs = []
-    num_tests = 0
-    n = grid_world.n
-    failed = 0
 
-    grid_world.activate_testing_mode()
-
-    for x1 in range(n):
-        for y1 in range(n):
-            for x2 in range(n):
-                for y2 in range(n):
-                    for x3 in range(n):
-                        for y3 in range(n):
-                            if x2 == x3 and y2 == y3:
-                                break  # location a and location b cannot be the same
-                            grid_world.reset(agent_location=Coordinate(x1, y1), location_a=Coordinate(x2, y2),
-                                             location_b=Coordinate(x3, y3))
-                            step_count = 0
-                            q_values = []
-                            path = []
-
-                            # optimal cost to from agent initial location to A to B
-                            optimal_costs.append(
-                                manhattan(grid_world.agent.location, grid_world.location_a) + manhattan(
-                                    grid_world.location_a, grid_world.location_b))
-
-                            grid_world.agent.q_learning.epsilon = 0
-                            while not grid_world.agent.objective_completed and step_count < 100:
-                                action = grid_world.agent.get_action()
-                                grid_world.agent.execute_action(action)
-                                step_count += 1
-                                path.append(grid_world.agent.location)
-                            if (step_count >= 100):
-                                failed += 1
-                                print(f"Agent Initial Location: {x1, y1}")
-                                print(f"Location A: {x2, y2}")
-                                print(f"Location B: {x3, y3}")
-                                print(path)
-                            steps_per_test.append(step_count)  # Record the number of steps
-
-    num_tests = len(steps_per_test)
-
-    # Plot for optimal and actual steps
-    plt.figure(figsize=(12, 5))
-    plt.subplot(1, 2, 1)
-    plt.plot(range(num_tests), steps_per_test, label='Steps')
-    plt.plot(range(num_tests), optimal_costs, linestyle="dashed", label='Optimal Steps')
-    plt.xlabel('Test Number')
-    plt.ylabel('Steps')
-    plt.title('Step Progress During Testing')
-    plt.legend()
-
-    # Plot for difference in optimal and actual steps
-    difference = [s - o for s, o in zip(steps_per_test, optimal_costs)]
-    print(f"{difference.count(0)}/{num_tests} tests were optimal")
-    print(f"{sum(1 for x in difference if x != 0)}/{num_tests} tests were not optimal")
-    print(f"{failed}/{num_tests} tests have timed-out")
-    plt.subplot(1, 2, 2)
-    plt.plot(range(num_tests), difference, label='Steps Difference')
-    plt.xlabel('Test Number')
-    plt.ylabel('Steps')
-    plt.title('Difference in Optimal and Actual Steps During Testing')
-    plt.legend()
-    plt.show()
-
-
-test_agent(world)
+# test_agent(world)
 
 """
 ### Testing Observations
